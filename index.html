@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mafia Game</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background-color: #f9f9f9; }
+        #status, #messages, #actions, #chat { margin: 20px; padding: 10px; }
+        #messages { height: 200px; overflow-y: scroll; border: 1px solid #ccc; background: #fff; }
+        #chat { margin-top: 20px; }
+        #voteInput, #chatInput { margin-top: 10px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>Mafia Game</h1>
+    <div id="nicknameSection">
+        <input type="text" id="nicknameInput" placeholder="Enter your nickname">
+        <button onclick="setNickname()">Join Game</button>
+    </div>
+    <div id="status">Connecting...</div>
+    <div id="timer" class="hidden">Timer: <span id="timerDisplay">00:00</span></div>
+    <div id="messages"></div>
+    <div id="actions" class="hidden">
+        <input type="text" id="voteInput" placeholder="Enter player name to vote">
+        <button onclick="sendVote()">Vote</button>
+    </div>
+    <div id="chat" class="hidden">
+        <input type="text" id="chatInput" placeholder="Enter message">
+        <button onclick="sendChat()">Send</button>
+    </div>
+
+    <script>
+        let playerRole = null;
+        let nickname = '';
+        let gamePhase = "day";  // 'day' or 'night'
+        const socket = new WebSocket('ws://localhost:3000');
+
+        // When the client successfully connects to the server
+        socket.onopen = () => {
+            console.log('Connected to server');
+            document.getElementById('status').innerText = 'Connected to server';
+        };
+        
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            console.log("Received message:", data);  // Log the received message for debugging
+            const messageElement = document.createElement('div');
+        
+            if (data.type === "welcome" || data.type === "playerList" || data.type === "vote" || data.type === "status") {
+                messageElement.innerText = data.message;
+            } else if (data.type === "role") {
+                playerRole = data.role;  // Receive and store the role
+                messageElement.innerText = `Your role is ${playerRole}`;
+                document.getElementById("actions").classList.remove("hidden");  // Show vote and action buttons
+                document.getElementById("chat").classList.remove("hidden");  // Show chat input
+            } else if (data.type === "timer") {
+                document.getElementById('timerDisplay').innerText = `${data.timeLeft}s`;
+                document.getElementById("timer").classList.remove("hidden");
+            } else if (data.type === "chat") {
+                messageElement.innerText = data.message;
+            }
+        
+            document.getElementById('messages').appendChild(messageElement);
+            
+            // Automatically scroll to the bottom of the messages container
+            const messagesContainer = document.getElementById('messages');
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        };
+        
+        // Set the nickname for the player
+        function setNickname() {
+            nickname = document.getElementById('nicknameInput').value;
+            if (nickname) {
+                socket.send(JSON.stringify({ type: "setNickname", nickname }));
+                document.getElementById("nicknameSection").classList.add("hidden");
+            }
+        }
+
+        // Send a vote message to the server
+        function sendVote() {
+            const vote = document.getElementById('voteInput').value;
+            const type = playerRole === "mafia" && gamePhase === "night" ? "mafiaVote" : "vote";
+            if (vote) {
+                socket.send(JSON.stringify({ type, voter: nickname, target: vote }));
+                document.getElementById('voteInput').value = '';
+            }
+        }
+
+        // Send a chat message to the server  
+        function sendChat() {
+            const chatMessage = document.getElementById('chatInput').value;
+            if (chatMessage) {
+                // Send the chat message to the server
+                socket.send(JSON.stringify({ type: "chat", nickname, message: chatMessage }));
+                // Clear the chat input field
+                document.getElementById('chatInput').value = '';
+            }
+        }
+    </script>
+</body>
+</html>
