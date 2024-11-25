@@ -17,9 +17,13 @@ function assignRoles() {
 
     players.forEach(player => {
         player.ws.send(JSON.stringify({ type: "role", role: player.role, message: `Your role is ${player.role}` }));
+
+        // 마피아에게만 추가 행동 요청
+        if (player.role === "mafia") {
+            player.ws.send(JSON.stringify({ type: "action", message: "You can kill a player at night.", action: "kill" }));
+        }
     });
 }
-
 function switchPhase() {
     gamePhase = gamePhase === "day" ? "night" : "day";
     broadcast({ type: "status", message: `It is now ${gamePhase}.` });
@@ -47,15 +51,49 @@ function startTimer() {
         }
     }, 1000);
 }
+function handleVoting() {
+    let voteTimeLeft = 30; // 투표 시간 30초
+    broadcast({ type: "status", message: `Voting time started. You have ${voteTimeLeft} seconds to vote.` });
+    broadcast({ type: "voteStart" });
 
+    const voteTimer = setInterval(() => {
+        voteTimeLeft--;
+        broadcast({ type: "timer", timeLeft: voteTimeLeft });
 
+        if (voteTimeLeft <= 0 || Object.keys(votes).length === players.filter(p => p.alive).length) {
+            clearInterval(voteTimer);
+            handleDayVote();
+            switchPhase();
+        }
+    }, 1000);
+}
+
+// 낮 투표 로직 수정
 function handleDayVote() {
+    const alivePlayers = players.filter(player => player.alive);
     const voteCounts = {};
-    Object.values(votes).forEach(vote => voteCounts[vote] = (voteCounts[vote] || 0) + 1);
-    const eliminated = Object.entries(voteCounts).reduce((a, b) => (a[1] > b[1] ? a : b), [])[0];
-    
-    if (eliminated) {
-        const player = players.find(p => p.playerId === eliminated);
+
+    // 투표 결과 집계
+    Object.values(votes).forEach(vote => {
+        voteCounts[vote] = (voteCounts[vote] || 0) + 1;
+    });
+
+    const sortedVotes = Object.entries(voteCounts).sort((a, b) => b[1] - a[1]);
+
+    // 투표 데이터가 없을 경우 처리
+    if (sortedVotes.length === 0) {
+        broadcast({ type: "status", message: "No votes were cast. Moving to the night phase." });
+        votes = {};
+        return;
+    }
+
+    // 최다 득표자 확인
+    if (sortedVotes.length > 1 && sortedVotes[0][1] === sortedVotes[1][1]) {
+        broadcast({ type: "status", message: "Vote is tied. Moving to the night phase." });
+    } else {
+        const eliminated = sortedVotes[0][0];
+        const player = alivePlayers.find(p => p.playerId === eliminated);
+
         if (player) {
             player.alive = false;
             player.ws.close();
@@ -65,15 +103,30 @@ function handleDayVote() {
     votes = {};
 }
 
+// 마피아 밤 행동 로직 추가
 function handleNightAction() {
-    const mafiaVote = Object.values(votes)[0];
-    const target = players.find(p => p.playerId === mafiaVote);
-    if (target) {
-        target.alive = false;
-        target.ws.close();
-        broadcast({ type: "status", message: `${target.playerId} was eliminated by the mafia.` });
+    if (gamePhase === "night") {
+        const mafia = players.find(player => player.role === "mafia" && player.alive);
+        if (!mafia) return;
+
+        mafia.ws.send(JSON.stringify({ type: "action", message: "Who would you like to kill?", options: players.filter(p => p.alive && p.role !== "mafia").map(p => p.playerId) }));
+
+        const nightTimer = setTimeout(() => {
+            if (Object.keys(votes).length > 0) {
+                const targetId = Object.values(votes)[0];
+                const target = players.find(p => p.playerId === targetId);
+                if (target) {
+                    target.alive = false;
+                    target.ws.close();
+                    broadcast({ type: "status", message: `${target.playerId} was eliminated by the mafia.` });
+                }
+            } else {
+                broadcast({ type: "status", message: "No one was eliminated during the night." });
+            }
+            votes = {};
+            switchPhase();
+        }, 30000); // 30초 타이머
     }
-    votes = {};
 }
 
 function broadcast(data) {
@@ -88,19 +141,25 @@ function checkGameEnd() {
     const aliveMafia = players.filter(player => player.role === "mafia" && player.alive).length;
     const aliveCitizens = players.filter(player => player.role === "citizen" && player.alive).length;
 
-    if (aliveMafia === 1 && aliveCitizens === 0) {
-        broadcast({ type: "status", message: "Mafia wins!" });
+    if (aliveMafia === 0) {
+        broadcast({ type: "gameEnd", winner: "Citizens", message: "Citizens win! The mafia has been eliminated." });
         endGame();
-    } else if (aliveMafia === 0) {
-        broadcast({ type: "status", message: "Citizens win!" });
+    } else if (aliveMafia >= aliveCitizens) {
+        broadcast({ type: "gameEnd", winner: "Mafia", message: "Mafia wins! They outnumber the citizens." });
         endGame();
     }
 }
 
 function endGame() {
     broadcast({ type: "status", message: "Game Over!" });
-    // 게임을 종료하는 추가 로직을 추가할 수 있습니다.
+    players.forEach(player => player.ws.close()); // 모든 연결 닫기
+    players = [];
+    votes = {};
+    rolesAssigned = false;
+    gamePhase = "day";
+    clearInterval(timer); // 타이머 초기화
 }
+
 
 wss.on('connection', (ws) => {
     console.log("New client connected.");
@@ -115,35 +174,53 @@ wss.on('connection', (ws) => {
         const data = JSON.parse(message);
         console.log(`Received message from ${data.nickname}:`, data);
 
+        // 닉네임 설정 처리
         if (data.type === "setNickname") {
             const playerId = data.nickname;
             players.push({ ws, playerId, role: null, alive: true });
             ws.send(JSON.stringify({ type: "welcome", message: `Welcome ${playerId}!` }));
             broadcastPlayerList();
 
+            // 플레이어가 모두 들어왔을 때만 역할을 할당하고 게임을 시작
             if (players.length === maxPlayers && !rolesAssigned) {
                 console.log("All players connected. Assigning roles and starting the game...");
                 assignRoles(); // 게임 시작
-                startTimer();
+                startTimer();  // 타이머 시작
             }
         }
 
-       // 투표 처리
-if (data.type === "vote" && gamePhase === "day") {
-    votes[data.voter] = data.target;
-    broadcast({ type: "vote", message: `${data.voter} voted for ${data.target}` });
-}
+        // 채팅 메시지 처리
+        if (data.type === "chat") {
+            broadcast({ type: "chat", nickname: data.nickname, message: data.message });
+        }
 
-// 마피아 투표 (밤에만)
-if (data.type === "mafiaVote" && gamePhase === "night") {
-    votes[data.voter] = data.target;
-}
+        // 낮 투표 처리
+        if (data.type === "vote" && gamePhase === "day") {
+            votes[data.voter] = data.target;
+            broadcast({ type: "status", message: `${data.voter} has voted.` });
+            if (Object.keys(votes).length === players.filter(p => p.alive).length) {
+                handleDayVote();
+                checkGameEnd();
+                switchPhase();
+            }
+        }
 
-// 채팅 메시지 처리
-if (data.type === "chat") {
-    broadcast({ type: "chat", message: `${data.nickname}: ${data.message}` });
-}
-
+        // 밤 행동(마피아 킬) 처리
+        if (data.type === "kill" && gamePhase === "night") {
+            const mafia = players.find(p => p.ws === ws);
+            if (mafia && mafia.role === "mafia") {
+                votes[data.voter] = data.target;
+                const target = players.find(p => p.playerId === data.target);
+                if (target) {
+                    target.alive = false;
+                    target.ws.close();
+                    broadcast({ type: "status", message: `${target.playerId} was eliminated by the mafia.` });
+                }
+                votes = {};
+                checkGameEnd();
+                switchPhase();
+            }
+        }
     });
 
     ws.on('close', () => {
@@ -152,6 +229,5 @@ if (data.type === "chat") {
         broadcastPlayerList();
     });
 });
-
 
 console.log("WebSocket server is running on ws://0.0.0.0:3000");

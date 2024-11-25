@@ -25,6 +25,7 @@
     <div id="actions" class="hidden">
         <input type="text" id="voteInput" placeholder="Enter player name to vote">
         <button onclick="sendVote()">Vote</button>
+        <button id="killButton" class="hidden" onclick="sendKill()">Kill</button> <!-- Add Kill button -->
     </div>
     <div id="chat" class="hidden">
         <input type="text" id="chatInput" placeholder="Enter message">
@@ -47,19 +48,33 @@
             const data = JSON.parse(event.data);
             console.log("Received message:", data);  // Log the received message for debugging
             const messageElement = document.createElement('div');
-        
+            
             if (data.type === "welcome" || data.type === "playerList" || data.type === "vote" || data.type === "status") {
                 messageElement.innerText = data.message;
             } else if (data.type === "role") {
                 playerRole = data.role;  // Receive and store the role
                 messageElement.innerText = `Your role is ${playerRole}`;
+                
+                // Show or hide buttons based on role
                 document.getElementById("actions").classList.remove("hidden");  // Show vote and action buttons
                 document.getElementById("chat").classList.remove("hidden");  // Show chat input
+                
+                // If the player is a mafia, show "kill" button
+                if (playerRole === "mafia") {
+                    document.getElementById("killButton").classList.remove("hidden");  // Show "Kill" button
+                }
             } else if (data.type === "timer") {
                 document.getElementById('timerDisplay').innerText = `${data.timeLeft}s`;
                 document.getElementById("timer").classList.remove("hidden");
             } else if (data.type === "chat") {
                 messageElement.innerText = data.message;
+            } else if (data.type === "voteStart") {
+                // Disable vote button during the night phase
+                if (data.phase === "night") {
+                    document.getElementById("voteButton").disabled = true;  // Disable vote button at night
+                } else if (data.phase === "day") {
+                    document.getElementById("voteButton").disabled = false;  // Enable vote button during the day
+                }
             }
         
             document.getElementById('messages').appendChild(messageElement);
@@ -68,6 +83,7 @@
             const messagesContainer = document.getElementById('messages');
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         };
+        
         
         // Set the nickname for the player
         function setNickname() {
@@ -96,6 +112,15 @@
                 socket.send(JSON.stringify({ type: "chat", nickname, message: chatMessage }));
                 // Clear the chat input field
                 document.getElementById('chatInput').value = '';
+            }
+        }
+
+        // Send a "kill" action for the mafia during the night phase
+        function sendKill() {
+            const target = document.getElementById('voteInput').value;
+            if (target) {
+                socket.send(JSON.stringify({ type: "kill", voter: nickname, target }));
+                document.getElementById('voteInput').value = '';
             }
         }
     </script>
