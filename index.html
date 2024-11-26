@@ -43,7 +43,7 @@
             console.log('Connected to server');
             document.getElementById('status').innerText = 'Connected to server';
         };
-        
+
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             console.log("Received message:", data);  // Log the received message for debugging
@@ -67,7 +67,7 @@
                 document.getElementById('timerDisplay').innerText = `${data.timeLeft}s`;
                 document.getElementById("timer").classList.remove("hidden");
             } else if (data.type === "chat") {
-                messageElement.innerText = data.message;
+                messageElement.innerText = `${data.nickname}: ${data.message}`;
             } else if (data.type === "voteStart") {
                 // Disable vote button during the night phase
                 if (data.phase === "night") {
@@ -83,7 +83,6 @@
             const messagesContainer = document.getElementById('messages');
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         };
-        
         
         // Set the nickname for the player
         function setNickname() {
