@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mafia Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="header">
+        <h1>Mafia Game</h1>
+        <div id="timer" class="hidden">Timer: <span id="timerDisplay">00:00</span></div>
+        <div id="status">Connecting...</div>
+    </div>
+
+    <!-- Nickname Section -->
+    <div id="nicknameSection">
+        <input type="text" id="nicknameInput" placeholder="Enter your nickname">
+        <button onclick="setNickname()">Join Game</button>
+    </div>
+
+    <!-- Game Container -->
+    <div id="gameContainer" class="hidden">
+        <div class="container">
+            <div id="messages">
+                <h2>Messages</h2>
+                <!-- 실시간 메시지가 표시되는 영역 -->
+                <div id="chatMessages"></div>
+                <!-- 채팅 입력 -->
+                <div id="chat">
+                    <input type="text" id="chatInput" placeholder="Type your message...">
+                    <button onclick="sendChat()">Send</button>
+                </div>
+            </div>
+            
+            <div id="roleSection">
+                <img id="roleImage" src="default-image.png" alt="Role Image">
+                <p id="roleText">Your role will be displayed here</p>
+                <div id="actions">
+                    <input type="text" id="voteInput" placeholder="Enter player name">
+                    <button onclick="sendVote()">Vote</button>
+                    <button id="killButton" class="hidden" onclick="sendKill()">Kill</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="scripts.js"></script>
+</body>
+</html>

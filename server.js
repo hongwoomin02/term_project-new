@@ -1,5 +1,22 @@
 const WebSocket = require('ws');
-const wss = new WebSocket.Server({ port: 3000, host: '0.0.0.0' });
+const express = require('express');
+const path = require('path');
+const http = require('http');
+
+// Express 앱 생성
+const app = express();
+
+// 정적 파일 제공 설정
+app.use(express.static(path.join(__dirname, 'public')));
+
+// HTML 기본 라우트 설정 (필요 시)
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// HTTP 서버 생성 및 WebSocket 서버 결합
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
 let players = [];
 let maxPlayers = 5;
@@ -16,10 +33,16 @@ function assignRoles() {
     shuffledPlayers.slice(1).forEach(player => player.role = "citizen");
     rolesAssigned = true;
 
-    players.forEach(player => {
-        player.ws.send(JSON.stringify({ type: "role", role: player.role, message: `Your role is ${player.role}` }));
+    let rolesAssignedCount = 0;
 
-        // 마피아에게만 추가 행동 요청
+    players.forEach(player => {
+        player.ws.send(JSON.stringify({ type: "role", role: player.role, message: `Your role is ${player.role}` }), () => {
+            rolesAssignedCount++;
+            if (rolesAssignedCount === players.length) {
+                startTimer();
+            }
+        });
+
         if (player.role === "mafia") {
             player.ws.send(JSON.stringify({ type: "action", message: "You can kill a player at night.", action: "kill" }));
         }
@@ -34,8 +57,9 @@ function switchPhase() {
 }
 
 function startTimer() {
-    clearInterval(timer);
-    let timeLeft = 30; // 30초 타이머 설정
+    if (timer) clearInterval(timer);
+
+    let timeLeft = 30; // 30초 타이머
     broadcast({ type: "timer", timeLeft });
 
     timer = setInterval(() => {
@@ -44,6 +68,7 @@ function startTimer() {
 
         if (timeLeft <= 0) {
             clearInterval(timer);
+            timer = null;
             if (gamePhase === "day") {
                 handleDayVote();
             } else if (gamePhase === "night") {
@@ -230,4 +255,7 @@ wss.on('connection', (ws) => {
     });
 });
 
-console.log("WebSocket server is running on ws://0.0.0.0:3000");
+server.listen(3000, () => {
+    console.log('Server is running on http://localhost:3000');
+    console.log('WebSocket server is running on ws://0.0.0.0:3000');
+});

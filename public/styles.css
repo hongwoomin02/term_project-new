@@ -1,0 +1,87 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    background-color: #f9f9f9;
+    display: flex;
+    flex-direction: column;
+    height: 100vh; /* 전체 화면 높이 채우기 */
+}
+
+#header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background-color: #333;
+    color: white;
+}
+
+.container {
+    display: flex;
+    flex: 1; /* 남은 화면을 모두 채움 */
+}
+
+#messages {
+    height: 300px; /* 원하는 높이로 고정 */
+    
+    border: 1px solid #ccc; /* 경계선 추가 */
+    padding: 10px; /* 내부 여백 */
+    background-color: #f9f9f9; /* 배경색 */
+    border-radius: 5px; /* 모서리 둥글게 */
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* 약간의 그림자 */
+}
+
+
+#chatMessages {
+    flex: 1; /* 남은 공간을 차지 */
+    overflow-y: auto; /* 스크롤 가능 */
+    height: calc(100% - 50px); /* 입력창 높이를 제외한 영역 차지 */
+    padding-right: 10px; /* 스크롤바 여백 */
+    margin-bottom: 10px;
+    background-color: #f9f9f9;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+#chat {
+    display: flex;
+    gap: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #ccc; /* 입력창 위에 구분선 */
+    background-color: #fff; /* 고정된 입력창 배경색 */
+    position: sticky;
+    bottom: 0; /* 항상 하단에 고정 */
+    padding: 10px;
+    z-index: 1; /* 위로 고정 */
+}
+
+
+#roleSection {
+    flex: 1; /* 전체 너비의 절반 */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: #f1f1f1;
+    height: 100%; /* 화면 높이에 맞게 채우기 */
+    box-sizing: border-box;
+    padding: 20px;
+}
+
+#roleImage {
+    max-width: 100%; /* 섹션의 너비에 맞춤 */
+    max-height: 80%; /* 섹션의 높이에 맞춤 */
+    object-fit: contain;
+    margin-bottom: 20px;
+}
+
+#actions {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.hidden {
+    display: none;
+}
