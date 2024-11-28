@@ -1,5 +1,22 @@
 const WebSocket = require('ws');
-const wss = new WebSocket.Server({ port: 3000, host: '0.0.0.0' });
+const express = require('express');
+const path = require('path');
+const http = require('http');
+
+// Express 앱 생성
+const app = express();
+
+// 정적 파일 제공 설정
+app.use(express.static(path.join(__dirname, 'public')));
+
+// HTML 기본 라우트 설정 (필요 시)
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// HTTP 서버 생성 및 WebSocket 서버 결합
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
 let players = [];
 let maxPlayers = 5;
@@ -16,10 +33,16 @@ function assignRoles() {
     shuffledPlayers.slice(1).forEach(player => player.role = "citizen");
     rolesAssigned = true;
 
-    players.forEach(player => {
-        player.ws.send(JSON.stringify({ type: "role", role: player.role, message: `Your role is ${player.role}` }));
+    let rolesAssignedCount = 0;
 
-        // 마피아에게만 추가 행동 요청
+    players.forEach(player => {
+        player.ws.send(JSON.stringify({ type: "role", role: player.role, message: `Your role is ${player.role}` }), () => {
+            rolesAssignedCount++;
+            if (rolesAssignedCount === players.length) {
+                startTimer();
+            }
+        });
+
         if (player.role === "mafia") {
             player.ws.send(JSON.stringify({ type: "action", message: "You can kill a player at night.", action: "kill" }));
         }
@@ -29,13 +52,14 @@ function assignRoles() {
 function switchPhase() {
     gamePhase = gamePhase === "day" ? "night" : "day";
     voters = []; // 새 단계 시작 시 투표자 목록 초기화
-    broadcast({ type: "status", message: `It is now ${gamePhase}.` });
+    broadcast({ type: "phase", message: `It is now ${gamePhase}.` }); 
     startTimer();
 }
 
 function startTimer() {
-    clearInterval(timer);
-    let timeLeft = 30; // 30초 타이머 설정
+    if (timer) clearInterval(timer);
+
+    let timeLeft = 30; // 30초 타이머
     broadcast({ type: "timer", timeLeft });
 
     timer = setInterval(() => {
@@ -44,6 +68,7 @@ function startTimer() {
 
         if (timeLeft <= 0) {
             clearInterval(timer);
+            timer = null;
             if (gamePhase === "day") {
                 handleDayVote();
             } else if (gamePhase === "night") {
@@ -103,14 +128,18 @@ function handleNightAction() {
             if (Object.keys(votes).length > 0) {
                 const targetId = Object.values(votes)[0];
                 const target = players.find(p => p.playerId === targetId);
-                if (target) {
+
+                if (!target || !target.alive) {
+                    mafia.ws.send(JSON.stringify({ type: "error", message: "Invalid target. No one was killed." }));
+                    broadcast({ type: "chat", message: "No one was eliminated during the night." });
+                } else {
                     target.alive = false;
                     target.ws.send(JSON.stringify({ type: "eliminated", message: "You are eliminated" }));
                     target.ws.close();
-                    broadcast({ type: "status", message: `${target.playerId} was eliminated by the mafia.` });
+                    broadcast({ type: "chat", message: `${target.playerId} was eliminated by the Mafia.` });
                 }
             } else {
-                broadcast({ type: "status", message: "No one was eliminated during the night." });
+                broadcast({ type: "chat", message: "No one was eliminated during the night." });
             }
             votes = {};
             switchPhase();
@@ -157,10 +186,11 @@ function broadcast(data) {
         }
     });
 }
-
 function broadcastPlayerList() {
-    const playerList = players.filter(p => p.alive).map(player => player.playerId).join(", ");
-    broadcast({ type: "playerList", message: `Alive players: ${playerList}` });
+    // 살아있는 플레이어 목록을 가져오고 이를 문자열로 변환
+    const playerList = players.filter(p => p.alive).map(player => player.playerId);
+    // 클라이언트로 플레이어 목록 전송
+    broadcast({ type: "playerList", players: playerList });
 }
 
 wss.on('connection', (ws) => {
@@ -186,15 +216,16 @@ wss.on('connection', (ws) => {
                 startTimer();
             }
         }
-
         if (data.type === "vote" && gamePhase === "day") {
             if (voters.includes(data.voter)) {
                 ws.send(JSON.stringify({ type: "error", message: "You have already voted." }));
+            } else if (!players.some(p => p.playerId === data.target && p.alive)) {
+                ws.send(JSON.stringify({ type: "error", message: "Invalid vote target." }));
             } else {
                 voters.push(data.voter);
                 votes[data.voter] = data.target;
-                broadcast({ type: "status", message: `${data.voter} has voted.` });
-
+                broadcast({ type: "chat", message: `${data.voter} has voted.` });
+        
                 if (Object.keys(votes).length === players.filter(p => p.alive).length) {
                     handleDayVote();
                     checkGameEnd();
@@ -202,18 +233,30 @@ wss.on('connection', (ws) => {
                 }
             }
         }
+        
 
         if (data.type === "kill" && gamePhase === "night") {
             const mafia = players.find(p => p.ws === ws);
             if (mafia && mafia.role === "mafia") {
-                votes[data.voter] = data.target;
-                const target = players.find(p => p.playerId === data.target);
-                if (target) {
-                    target.alive = false;
-                    target.ws.send(JSON.stringify({ type: "eliminated", message: "You are eliminated" }));
-                    target.ws.close();
-                    broadcast({ type: "status", message: `${target.playerId} was eliminated by the mafia.` });
+                const target = players.find(p => p.playerId === data.target && p.alive);
+                
+                // 타겟 유효성 검사
+                if (!target) {
+                    mafia.ws.send(JSON.stringify({ 
+                        type: "error", 
+                        message: `Invalid target: ${data.target} does not exist or is already dead.` 
+                    }));
+                    return; // 잘못된 타겟이므로 함수 종료
                 }
+        
+                // 유효한 타겟일 경우 처리
+                votes[mafia.playerId] = data.target;
+                target.alive = false;
+                target.ws.send(JSON.stringify({ type: "eliminated", message: "You are eliminated" }));
+                target.ws.close();
+                
+                broadcast({ type: "chat", message: `${target.playerId} was eliminated by the mafia.` });
+        
                 votes = {};
                 checkGameEnd();
                 switchPhase();
@@ -230,4 +273,7 @@ wss.on('connection', (ws) => {
     });
 });
 
-console.log("WebSocket server is running on ws://0.0.0.0:3000");
+server.listen(3000, () => {
+    console.log('Server is running on http://localhost:3000');
+    console.log('WebSocket server is running on ws://0.0.0.0:3000');
+});
