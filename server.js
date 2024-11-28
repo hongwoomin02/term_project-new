@@ -22,7 +22,7 @@ let players = [];
 let maxPlayers = 5;
 let votes = {};
 let voters = []; // 투표한 플레이어 추적
-let gamePhase = "day";
+let gamePhase = "아침";
 let rolesAssigned = false;
 let timer = null;
 
@@ -50,9 +50,9 @@ function assignRoles() {
 }
 
 function switchPhase() {
-    gamePhase = gamePhase === "day" ? "night" : "day";
+    gamePhase = gamePhase === "아침" ? "밤" : "아침";
     voters = []; // 새 단계 시작 시 투표자 목록 초기화
-    broadcast({ type: "phase", message: `It is now ${gamePhase}.` }); 
+    broadcast({ type: "phase", message: `지금은 ${gamePhase}입니다..` }); 
     startTimer();
 }
 
@@ -69,9 +69,9 @@ function startTimer() {
         if (timeLeft <= 0) {
             clearInterval(timer);
             timer = null;
-            if (gamePhase === "day") {
+            if (gamePhase === "아침") {
                 handleDayVote();
-            } else if (gamePhase === "night") {
+            } else if (gamePhase === "밤") {
                 handleNightAction();
             }
             switchPhase();
@@ -114,7 +114,7 @@ function handleDayVote() {
 }
 
 function handleNightAction() {
-    if (gamePhase === "night") {
+    if (gamePhase === "밤") {
         const mafia = players.find(player => player.role === "mafia" && player.alive);
         if (!mafia) return;
 
@@ -175,7 +175,7 @@ function endGame(winner) {
     players = [];
     votes = {};
     rolesAssigned = false;
-    gamePhase = "day";
+    gamePhase = "아침";
     clearInterval(timer); // 타이머 초기화
 }
 
@@ -216,7 +216,7 @@ wss.on('connection', (ws) => {
                 startTimer();
             }
         }
-        if (data.type === "vote" && gamePhase === "day") {
+        if (data.type === "vote" && gamePhase === "아침") {
             if (voters.includes(data.voter)) {
                 ws.send(JSON.stringify({ type: "error", message: "You have already voted." }));
             } else if (!players.some(p => p.playerId === data.target && p.alive)) {
@@ -235,7 +235,7 @@ wss.on('connection', (ws) => {
         }
         
 
-        if (data.type === "kill" && gamePhase === "night") {
+        if (data.type === "kill" && gamePhase === "밤") {
             const mafia = players.find(p => p.ws === ws);
             if (mafia && mafia.role === "mafia") {
                 const target = players.find(p => p.playerId === data.target && p.alive);
