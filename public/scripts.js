@@ -11,21 +11,6 @@ socket.onopen = () => {
     console.log('Connected to server');
     document.getElementById('status').innerText = 'Connected to server';
 };
-
-socket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-
-    if (data.type === "status") {
-        document.getElementById('status').innerText = data.message;
-
-        // Check if game is ready to start
-        if (data.message.includes("5/5 players")) {
-            playersReady = true;
-        }
-    } else if (data.type === "timer" && playersReady) {
-        updateTimer(data.timeLeft); // Only update timer if all players are ready
-    }
-};
 // Handle incoming messages from the server
 socket.onmessage = (event) => {
     const data = JSON.parse(event.data);
@@ -65,8 +50,6 @@ function displayChatMessage(sender, message) {
     const messageElement = document.createElement('div');
     messageElement.innerText = `${sender}: ${message}`;
     chatMessages.appendChild(messageElement);
-
- 
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
 }

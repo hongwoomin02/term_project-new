@@ -211,15 +211,16 @@ wss.on('connection', (ws) => {
                 startTimer();
             }
         }
-
         if (data.type === "vote" && gamePhase === "day") {
             if (voters.includes(data.voter)) {
                 ws.send(JSON.stringify({ type: "error", message: "You have already voted." }));
+            } else if (!players.some(p => p.playerId === data.target && p.alive)) {
+                ws.send(JSON.stringify({ type: "error", message: "Invalid vote target." }));
             } else {
                 voters.push(data.voter);
                 votes[data.voter] = data.target;
-                broadcast({ type: "status", message: `${data.voter} has voted.` });
-
+                broadcast({ type: "status", message: `${data.voter} has voted for ${data.target}.` });
+        
                 if (Object.keys(votes).length === players.filter(p => p.alive).length) {
                     handleDayVote();
                     checkGameEnd();
@@ -227,6 +228,7 @@ wss.on('connection', (ws) => {
                 }
             }
         }
+        
 
         if (data.type === "kill" && gamePhase === "night") {
             const mafia = players.find(p => p.ws === ws);
