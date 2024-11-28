@@ -10,26 +10,26 @@
     <div id="header">
         <h1>Mafia Game</h1>
         <div id="timer" class="hidden">Timer: <span id="timerDisplay">00:00</span></div>
-        <div id="status">Connecting...</div>
+        <div id="status">지금은 아침입니다...</div>
     </div>
 
     <!-- Nickname Section -->
     <div id="nicknameSection">
         <input type="text" id="nicknameInput" placeholder="Enter your nickname">
-        <button onclick="setNickname()">Join Game</button>
+        <button onclick="setNickname()">게임 입장</button>
     </div>
 
     <!-- Game Container -->
     <div id="gameContainer" class="hidden">
         <div class="container">
             <div id="messages">
-                <h2>Messages</h2>
+                <h2>메시지</h2>
                 <!-- 실시간 메시지가 표시되는 영역 -->
                 <div id="chatMessages"></div>
                 <!-- 채팅 입력 -->
                 <div id="chat">
                     <input type="text" id="chatInput" placeholder="Type your message...">
-                    <button onclick="sendChat()">Send</button>
+                    <button onclick="sendChat()">전송</button>
                 </div>
                 <div id="playerListContainer">
                     <h3>Players Online</h3>
@@ -39,11 +39,11 @@
             
             <div id="roleSection">
                 <img id="roleImage" src="default-image.png" alt="Role Image">
-                <p id="roleText">Your role will be displayed here</p>
+                <p id="roleText">당신의 직업입니다.</p>
                 <div id="actions">
                     <input type="text" id="voteInput" placeholder="Enter player name">
-                    <button onclick="sendVote()">Vote</button>
-                    <button id="killButton" class="hidden" onclick="sendKill()">Kill</button>
+                    <button onclick="sendVote()">투표</button>
+                    <button id="killButton" class="hidden" onclick="sendKill()">살해</button>
                 </div>
             </div>
         </div>

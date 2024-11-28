@@ -22,7 +22,7 @@ let players = [];
 let maxPlayers = 5;
 let votes = {};
 let voters = []; // 투표한 플레이어 추적
-let gamePhase = "day";
+let gamePhase = "아침";
 let rolesAssigned = false;
 let timer = null;
 
@@ -32,7 +32,7 @@ function assignRoles() {
     shuffledPlayers[0].role = "mafia";
     shuffledPlayers.slice(1).forEach(player => player.role = "citizen");
     rolesAssigned = true;
-
+    broadcast({ type: "status", message: "게임이 시작되었습니다!" });
     let rolesAssignedCount = 0;
 
     players.forEach(player => {
@@ -50,13 +50,26 @@ function assignRoles() {
 }
 
 function switchPhase() {
-    gamePhase = gamePhase === "day" ? "night" : "day";
+    // 게임이 실행 중인지 확인
+    if (!rolesAssigned || players.length !== maxPlayers) {
+        console.log("Cannot switch phase. Roles assigned:", rolesAssigned, "Players:", players.length);
+        return;
+    }
+
+    gamePhase = gamePhase === "아침" ? "밤" : "아침";
     voters = []; // 새 단계 시작 시 투표자 목록 초기화
-    broadcast({ type: "phase", message: `It is now ${gamePhase}.` }); 
+    broadcast({ type: "phase", message: `지금은 ${gamePhase}입니다.` });
     startTimer();
 }
 
+
 function startTimer() {
+    // 실행 조건 강화
+    if (players.length !== maxPlayers || !rolesAssigned) {
+        console.log("Timer cannot start. Players:", players.length, "Roles assigned:", rolesAssigned);
+        return;
+    }
+
     if (timer) clearInterval(timer);
 
     let timeLeft = 30; // 30초 타이머
@@ -69,15 +82,16 @@ function startTimer() {
         if (timeLeft <= 0) {
             clearInterval(timer);
             timer = null;
-            if (gamePhase === "day") {
+            if (gamePhase === "아침") {
                 handleDayVote();
-            } else if (gamePhase === "night") {
+            } else if (gamePhase === "밤") {
                 handleNightAction();
             }
             switchPhase();
         }
     }, 1000);
 }
+
 
 function handleDayVote() {
     const alivePlayers = players.filter(player => player.alive);
@@ -114,7 +128,7 @@ function handleDayVote() {
 }
 
 function handleNightAction() {
-    if (gamePhase === "night") {
+    if (gamePhase === "밤") {
         const mafia = players.find(player => player.role === "mafia" && player.alive);
         if (!mafia) return;
 
@@ -148,19 +162,37 @@ function handleNightAction() {
 }
 
 function checkGameEnd() {
+    // 생존 상태 확인
     const aliveMafia = players.filter(player => player.role === "mafia" && player.alive).length;
     const aliveCitizens = players.filter(player => player.role === "citizen" && player.alive).length;
 
+    console.log("DEBUG: Checking game end conditions...");
+    console.log("Alive Mafia:", aliveMafia, "Alive Citizens:", aliveCitizens);
+
+    // 시민 승리 조건: 모든 마피아가 제거됨
     if (aliveMafia === 0) {
+        console.log("DEBUG: Citizens win!");
         broadcast({ type: "gameEnd", winner: "Citizens", message: "Citizens win! The mafia has been eliminated." });
         endGame("Citizens");
-    } else if (aliveMafia >= aliveCitizens) {
+        return; // 종료 후 추가 처리를 방지
+    }
+
+    // 마피아 승리 조건: 마피아 수가 시민 수 이상
+    if (aliveMafia >= aliveCitizens) {
+        console.log("DEBUG: Mafia wins!");
         broadcast({ type: "gameEnd", winner: "Mafia", message: "Mafia wins! They outnumber the citizens." });
         endGame("Mafia");
+        return; // 종료 후 추가 처리를 방지
     }
+
+    console.log("DEBUG: Game continues.");
 }
 
+
 function endGame(winner) {
+    console.log("DEBUG: Ending game. Winner:", winner);
+
+    // 클라이언트에 게임 종료 메시지 전송
     broadcast({ type: "status", message: `Game Over! The ${winner} team wins!` });
     players.forEach(player => {
         if (player.ws.readyState === WebSocket.OPEN) {
@@ -170,14 +202,20 @@ function endGame(winner) {
                 message: `Game Over! The ${winner} team wins!`
             }));
         }
-        player.ws.close();
     });
+
+    // 서버 상태 초기화
     players = [];
     votes = {};
+    voters = [];
     rolesAssigned = false;
-    gamePhase = "day";
-    clearInterval(timer); // 타이머 초기화
+    gamePhase = "아침";
+    if (timer) clearInterval(timer);
+    timer = null;
+
+    console.log("Game has been reset. Waiting for players...");
 }
+
 
 function broadcast(data) {
     players.forEach(player => {
@@ -196,6 +234,11 @@ function broadcastPlayerList() {
 wss.on('connection', (ws) => {
     console.log("New client connected.");
 
+    if (rolesAssigned) {
+        ws.send(JSON.stringify({ type: "error", message: "Game is already in progress. Please wait for the next round." }));
+        ws.close();
+        return;
+    }
     if (players.length >= maxPlayers) {
         ws.send(JSON.stringify({ type: "error", message: "Game is full" }));
         ws.close();
@@ -207,16 +250,24 @@ wss.on('connection', (ws) => {
 
         if (data.type === "setNickname") {
             const playerId = data.nickname;
+
+            // 이미 같은 이름이 등록된 경우 차단
+            if (players.some(p => p.playerId === playerId)) {
+                ws.send(JSON.stringify({ type: "error", message: "Nickname already taken. Please choose another." }));
+                return;
+            }
+
             players.push({ ws, playerId, role: null, alive: true });
             ws.send(JSON.stringify({ type: "welcome", message: `Welcome ${playerId}!` }));
             broadcastPlayerList();
 
+            // 플레이어가 5명 도달하면 게임 시작
             if (players.length === maxPlayers && !rolesAssigned) {
                 assignRoles();
                 startTimer();
             }
         }
-        if (data.type === "vote" && gamePhase === "day") {
+        if (data.type === "vote" && gamePhase === "아침") {
             if (voters.includes(data.voter)) {
                 ws.send(JSON.stringify({ type: "error", message: "You have already voted." }));
             } else if (!players.some(p => p.playerId === data.target && p.alive)) {
@@ -235,7 +286,7 @@ wss.on('connection', (ws) => {
         }
         
 
-        if (data.type === "kill" && gamePhase === "night") {
+        if (data.type === "kill" && gamePhase === "밤") {
             const mafia = players.find(p => p.ws === ws);
             if (mafia && mafia.role === "mafia") {
                 const target = players.find(p => p.playerId === data.target && p.alive);
