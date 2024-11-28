@@ -16,17 +16,34 @@ socket.onmessage = (event) => {
     const data = JSON.parse(event.data);
     console.log("Received message:", data);
 
-    if (data.type === "welcome" || data.type === "status") {
+    if (data.type === "phase") {
+        updatePhaseIndicator(data.message); // 단계 전환 메시지 업데이트
+        gamePhase = data.message.includes("night") ? "night" : "day"; // 게임 단계 업데이트
+    } else if (data.type === "welcome" || data.type === "status") {
         document.getElementById('status').innerText = data.message;
     } else if (data.type === "role") {
         setRole(data.role);
     } else if (data.type === "chat") {
         displayChatMessage(data.nickname, data.message);
-    }else if (data.type === "timer") {
+    } else if (data.type === "timer") {
         updateTimer(data.timeLeft);
+    } else if (data.type === "playerList") {
+        updatePlayerList(data.players);
     }
 };
-
+function updatePlayerList(players) {
+    const playerListElement = document.getElementById('playerList');
+    playerListElement.innerHTML = ""; // 기존 목록 초기화
+    players.forEach(player => {
+        const listItem = document.createElement('div');
+        listItem.innerText = player;
+        playerListElement.appendChild(listItem);
+    });
+}
+function updatePhaseIndicator(phaseMessage) {
+    const statusElement = document.getElementById('status');
+    statusElement.innerText = phaseMessage;
+}
 // Set nickname and join the game
 function setNickname() {
     const input = document.getElementById('nicknameInput');
