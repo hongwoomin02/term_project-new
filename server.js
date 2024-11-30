@@ -32,42 +32,35 @@ function assignRoles() {
     shuffledPlayers[0].role = "mafia";
     shuffledPlayers.slice(1).forEach(player => player.role = "citizen");
     rolesAssigned = true;
-    broadcast({ type: "status", message: "게임이 시작되었습니다!" });
+    broadcast({ type: "system", message: "게임이 시작되었습니다!" });
     let rolesAssignedCount = 0;
 
     players.forEach(player => {
-        player.ws.send(JSON.stringify({ type: "role", role: player.role, message: `Your role is ${player.role}` }), () => {
+        player.ws.send(JSON.stringify({ type: "role", role: player.role, message: `당신은 ${player.role}입니다` }), () => {
             rolesAssignedCount++;
             if (rolesAssignedCount === players.length) {
                 startTimer();
             }
         });
-
-        if (player.role === "mafia") {
-            player.ws.send(JSON.stringify({ type: "action", message: "You can kill a player at night.", action: "kill" }));
-        }
     });
 }
 
 function switchPhase() {
     // 게임이 실행 중인지 확인
-    if (!rolesAssigned || players.length !== maxPlayers) {
-        console.log("Cannot switch phase. Roles assigned:", rolesAssigned, "Players:", players.length);
-        return;
+    if (checkGameEnd()) {
+        return; // 게임 종료 시 단계 전환 방지
     }
-
     gamePhase = gamePhase === "아침" ? "밤" : "아침";
     voters = []; // 새 단계 시작 시 투표자 목록 초기화
-    broadcast({ type: "phase", message: `지금은 ${gamePhase}입니다.` });
+    broadcast({ type: "status", message: `지금은 ${gamePhase}입니다.` });
     startTimer();
 }
 
 
 function startTimer() {
     // 실행 조건 강화
-    if (players.length !== maxPlayers || !rolesAssigned) {
-        console.log("Timer cannot start. Players:", players.length, "Roles assigned:", rolesAssigned);
-        return;
+    if (checkGameEnd()) {
+        return; // 게임 종료 시 타이머 시작 방지
     }
 
     if (timer) clearInterval(timer);
@@ -105,22 +98,22 @@ function handleDayVote() {
     const sortedVotes = Object.entries(voteCounts).sort((a, b) => b[1] - a[1]);
 
     if (sortedVotes.length === 0) {
-        broadcast({ type: "status", message: "No votes were cast. Moving to the night phase." });
+        broadcast({ type: "system", message: "아무도 투표를 하지않았습니다. 밤이됩니다.." });
         votes = {};
         return;
     }
 
     if (sortedVotes.length > 1 && sortedVotes[0][1] === sortedVotes[1][1]) {
-        broadcast({ type: "status", message: "Vote is tied. Moving to the night phase." });
+        broadcast({ type: "system", message: "투표가 동률입니다. 밤이됩니다.." });
     } else {
         const eliminated = sortedVotes[0][0];
         const player = alivePlayers.find(p => p.playerId === eliminated);
 
         if (player) {
             player.alive = false;
-            player.ws.send(JSON.stringify({ type: "eliminated", message: "You are eliminated" }));
+            player.ws.send(JSON.stringify({ type: "alert", message: "당신은 투표로 사망했습니다. 연결을 끊습니다..." }));
             player.ws.close();
-            broadcast({ type: "status", message: `${player.playerId} has been eliminated by vote.` });
+            broadcast({ type:"system", message: `${player.playerId}님 투표에의해 사망했습니다.` });
         }
     }
     votes = {};
@@ -132,28 +125,21 @@ function handleNightAction() {
         const mafia = players.find(player => player.role === "mafia" && player.alive);
         if (!mafia) return;
 
-        mafia.ws.send(JSON.stringify({
-            type: "action",
-            message: "Who would you like to kill?",
-            options: players.filter(p => p.alive && p.role !== "mafia").map(p => p.playerId)
-        }));
-
         const nightTimer = setTimeout(() => {
             if (Object.keys(votes).length > 0) {
                 const targetId = Object.values(votes)[0];
                 const target = players.find(p => p.playerId === targetId);
 
                 if (!target || !target.alive) {
-                    mafia.ws.send(JSON.stringify({ type: "error", message: "Invalid target. No one was killed." }));
-                    broadcast({ type: "chat", message: "No one was eliminated during the night." });
+                    mafia.ws.send(JSON.stringify({ type: "system", message: "유효하지않는 타겟입니다." }));
                 } else {
                     target.alive = false;
-                    target.ws.send(JSON.stringify({ type: "eliminated", message: "You are eliminated" }));
+                    target.ws.send(JSON.stringify({ type: "alert", message: "당신은 마피아에의해 사망했습니다. 연결을 끊습니다..." }));
                     target.ws.close();
-                    broadcast({ type: "chat", message: `${target.playerId} was eliminated by the Mafia.` });
+                    broadcast({ type: "system", message: `${target.playerId}는 마피아에의해 사망했습니다.` });
                 }
             } else {
-                broadcast({ type: "chat", message: "No one was eliminated during the night." });
+                broadcast({ type: "system", message: "밤동안 아무일도 없었습니다." });
             }
             votes = {};
             switchPhase();
@@ -166,54 +152,33 @@ function checkGameEnd() {
     const aliveMafia = players.filter(player => player.role === "mafia" && player.alive).length;
     const aliveCitizens = players.filter(player => player.role === "citizen" && player.alive).length;
 
-    console.log("DEBUG: Checking game end conditions...");
-    console.log("Alive Mafia:", aliveMafia, "Alive Citizens:", aliveCitizens);
 
     // 시민 승리 조건: 모든 마피아가 제거됨
     if (aliveMafia === 0) {
-        console.log("DEBUG: Citizens win!");
-        broadcast({ type: "gameEnd", winner: "Citizens", message: "Citizens win! The mafia has been eliminated." });
         endGame("Citizens");
-        return; // 종료 후 추가 처리를 방지
+        return true; // 종료 후 추가 처리를 방지
     }
 
     // 마피아 승리 조건: 마피아 수가 시민 수 이상
     if (aliveMafia >= aliveCitizens) {
-        console.log("DEBUG: Mafia wins!");
-        broadcast({ type: "gameEnd", winner: "Mafia", message: "Mafia wins! They outnumber the citizens." });
         endGame("Mafia");
-        return; // 종료 후 추가 처리를 방지
+        return true; 
     }
-
-    console.log("DEBUG: Game continues.");
+    return false;
 }
 
-
 function endGame(winner) {
-    console.log("DEBUG: Ending game. Winner:", winner);
-
-    // 클라이언트에 게임 종료 메시지 전송
-    broadcast({ type: "status", message: `Game Over! The ${winner} team wins!` });
+    broadcast({ type: "alert", message: `Game Over! ${winner}팀 승리!` });
     players.forEach(player => {
-        if (player.ws.readyState === WebSocket.OPEN) {
-            player.ws.send(JSON.stringify({
-                type: "gameOver",
-                winner: winner,
-                message: `Game Over! The ${winner} team wins!`
-            }));
-        }
+        player.alive = true; // 모든 플레이어 초기화
+        player.role = null; // 역할 초기화
     });
-
-    // 서버 상태 초기화
-    players = [];
     votes = {};
     voters = [];
     rolesAssigned = false;
     gamePhase = "아침";
     if (timer) clearInterval(timer);
     timer = null;
-
-    console.log("Game has been reset. Waiting for players...");
 }
 
 
@@ -224,6 +189,7 @@ function broadcast(data) {
         }
     });
 }
+
 function broadcastPlayerList() {
     // 살아있는 플레이어 목록을 가져오고 이를 문자열로 변환
     const playerList = players.filter(p => p.alive).map(player => player.playerId);
@@ -235,15 +201,16 @@ wss.on('connection', (ws) => {
     console.log("New client connected.");
 
     if (rolesAssigned) {
-        ws.send(JSON.stringify({ type: "error", message: "Game is already in progress. Please wait for the next round." }));
+        ws.send(JSON.stringify({ type: "alert", message: "게임이 이미 진행중입니다.." }));
+        ws.send(JSON.stringify({ type: "status", message: "연결을 끊습니다.." }));
         ws.close();
         return;
     }
-    if (players.length >= maxPlayers) {
-        ws.send(JSON.stringify({ type: "error", message: "Game is full" }));
-        ws.close();
-        return;
-    }
+    // if (players.length >= maxPlayers) {
+    //     ws.send(JSON.stringify({ type: "alert", message: "게임 인원수가 다찼습니다.." }));
+    //     ws.close();
+    //     return;
+    // }
 
     ws.on('message', (message) => {
         const data = JSON.parse(message);
@@ -253,12 +220,10 @@ wss.on('connection', (ws) => {
 
             // 이미 같은 이름이 등록된 경우 차단
             if (players.some(p => p.playerId === playerId)) {
-                ws.send(JSON.stringify({ type: "error", message: "Nickname already taken. Please choose another." }));
+                ws.send(JSON.stringify({ type: "error", message: "이미 등록된 닉네임입니다." }));
                 return;
             }
-
             players.push({ ws, playerId, role: null, alive: true });
-            ws.send(JSON.stringify({ type: "welcome", message: `Welcome ${playerId}!` }));
             broadcastPlayerList();
 
             // 플레이어가 5명 도달하면 게임 시작
@@ -267,15 +232,20 @@ wss.on('connection', (ws) => {
                 startTimer();
             }
         }
-        if (data.type === "vote" && gamePhase === "아침") {
+        if (data.type === "vote") {
+            if (gamePhase === "밤") {
+                ws.send(JSON.stringify({ type: "system", message: "아침에만 투표할 수 있습니다." }));
+                return; // 밤에는 투표 동작 중지
+            }
+        
             if (voters.includes(data.voter)) {
-                ws.send(JSON.stringify({ type: "error", message: "You have already voted." }));
+                ws.send(JSON.stringify({ type: "system", message: "당신은 이미 투표를 했습니다." }));
             } else if (!players.some(p => p.playerId === data.target && p.alive)) {
-                ws.send(JSON.stringify({ type: "error", message: "Invalid vote target." }));
+                ws.send(JSON.stringify({ type: "system", message: "유효하지 않은 사람입니다." }));
             } else {
                 voters.push(data.voter);
                 votes[data.voter] = data.target;
-                broadcast({ type: "chat", message: `${data.voter} has voted.` });
+                broadcast({ type: "system", message: `${data.voter}님이 투표했습니다.` });
         
                 if (Object.keys(votes).length === players.filter(p => p.alive).length) {
                     handleDayVote();
@@ -286,35 +256,42 @@ wss.on('connection', (ws) => {
         }
         
 
-        if (data.type === "kill" && gamePhase === "밤") {
+        if (data.type === "kill") {
+            if (gamePhase === "아침") {
+                ws.send(JSON.stringify({ type: "system", message: "밤에만 살해할 수 있습니다." }));
+                return; // 낮에는 살해 동작 중지
+            }
+        
             const mafia = players.find(p => p.ws === ws);
             if (mafia && mafia.role === "mafia") {
                 const target = players.find(p => p.playerId === data.target && p.alive);
-                
+        
                 // 타겟 유효성 검사
                 if (!target) {
-                    mafia.ws.send(JSON.stringify({ 
-                        type: "error", 
-                        message: `Invalid target: ${data.target} does not exist or is already dead.` 
-                    }));
+                    mafia.ws.send(JSON.stringify({ type: "system", message: `유효하지 않은 타겟입니다.` }));
                     return; // 잘못된 타겟이므로 함수 종료
                 }
         
                 // 유효한 타겟일 경우 처리
                 votes[mafia.playerId] = data.target;
                 target.alive = false;
-                target.ws.send(JSON.stringify({ type: "eliminated", message: "You are eliminated" }));
+                target.ws.send(JSON.stringify({ type: "alert", message: "당신은 마피아에 의해 사망했습니다. 연결을 끊습니다.." }));
                 target.ws.close();
-                
-                broadcast({ type: "chat", message: `${target.playerId} was eliminated by the mafia.` });
+        
+                broadcast({ type: "system", message: `${target.playerId}님은 마피아에 의해 사망했습니다.` });
         
                 votes = {};
                 checkGameEnd();
                 switchPhase();
             }
         }
+        
         if (data.type === "chat") {
-            broadcast({ type: "chat", message: `${data.nickname}: ${data.message}` });
+            if (gamePhase === "밤") {
+                ws.send(JSON.stringify({ type: "system", message: "아침에만 채팅할 수 있습니다." }));
+                return; // 밤에는 채팅 동작 중지
+            }
+            broadcast({ type: "chat", nickname: data.nickname, message: data.message });
         }
     });
 
