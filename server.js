@@ -233,6 +233,10 @@ wss.on('connection', (ws) => {
             }
         }
         if (data.type === "vote") {
+            if (!rolesAssigned) {
+                ws.send(JSON.stringify({ type: "system", message: "게임이 아직 시작되지 않았습니다." }));
+                return; // 게임 시작 전에는 투표 불가능
+            }
             if (gamePhase === "밤") {
                 ws.send(JSON.stringify({ type: "system", message: "아침에만 투표할 수 있습니다." }));
                 return; // 밤에는 투표 동작 중지
