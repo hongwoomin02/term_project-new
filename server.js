@@ -160,13 +160,12 @@ function checkGameEnd() {
     }
 
     // 마피아 승리 조건: 마피아 수가 시민 수 이상
-    if (aliveMafia == aliveCitizens) {
+    if (aliveMafia >= aliveCitizens) {
         endGame("Mafia");
         return true; 
     }
     return false;
 }
-
 
 function endGame(winner) {
     broadcast({ type: "alert", message: `Game Over! ${winner}팀 승리!` });
@@ -233,11 +232,16 @@ wss.on('connection', (ws) => {
                 startTimer();
             }
         }
-        if (data.type === "vote" && gamePhase === "아침") {
+        if (data.type === "vote") {
+            if (gamePhase === "밤") {
+                ws.send(JSON.stringify({ type: "system", message: "아침에만 투표할 수 있습니다." }));
+                return; // 밤에는 투표 동작 중지
+            }
+        
             if (voters.includes(data.voter)) {
                 ws.send(JSON.stringify({ type: "system", message: "당신은 이미 투표를 했습니다." }));
             } else if (!players.some(p => p.playerId === data.target && p.alive)) {
-                ws.send(JSON.stringify({ type: "system", message: "유효하지않는 사람입니다." }));
+                ws.send(JSON.stringify({ type: "system", message: "유효하지 않은 사람입니다." }));
             } else {
                 voters.push(data.voter);
                 votes[data.voter] = data.target;
@@ -252,32 +256,42 @@ wss.on('connection', (ws) => {
         }
         
 
-        if (data.type === "kill" && gamePhase === "밤") {
+        if (data.type === "kill") {
+            if (gamePhase === "아침") {
+                ws.send(JSON.stringify({ type: "system", message: "밤에만 살해할 수 있습니다." }));
+                return; // 낮에는 살해 동작 중지
+            }
+        
             const mafia = players.find(p => p.ws === ws);
             if (mafia && mafia.role === "mafia") {
                 const target = players.find(p => p.playerId === data.target && p.alive);
-                
+        
                 // 타겟 유효성 검사
                 if (!target) {
-                    mafia.ws.send(JSON.stringify({ type: "system", message: `유효하지않는 타겟입니다.` }));
+                    mafia.ws.send(JSON.stringify({ type: "system", message: `유효하지 않은 타겟입니다.` }));
                     return; // 잘못된 타겟이므로 함수 종료
                 }
         
                 // 유효한 타겟일 경우 처리
                 votes[mafia.playerId] = data.target;
                 target.alive = false;
-                target.ws.send(JSON.stringify({ type: "alert", message: "당신은 마피아에의해 사망했습니다. 연결을 끊습니다.." }));
+                target.ws.send(JSON.stringify({ type: "alert", message: "당신은 마피아에 의해 사망했습니다. 연결을 끊습니다.." }));
                 target.ws.close();
-                
-                broadcast({ type: "system", message: `${target.playerId}님은 마피아에의해 사망했습니다.` });
+        
+                broadcast({ type: "system", message: `${target.playerId}님은 마피아에 의해 사망했습니다.` });
         
                 votes = {};
                 checkGameEnd();
                 switchPhase();
             }
         }
+        
         if (data.type === "chat") {
-            broadcast({ type: "chat", message: `${data.nickname}: ${data.message}` });
+            if (gamePhase === "밤") {
+                ws.send(JSON.stringify({ type: "system", message: "아침에만 채팅할 수 있습니다." }));
+                return; // 밤에는 채팅 동작 중지
+            }
+            broadcast({ type: "chat", nickname: data.nickname, message: data.message });
         }
     });
 

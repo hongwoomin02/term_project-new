@@ -26,7 +26,7 @@ socket.onmessage = (event) => {
             updateTimer(data.timeLeft);
             break;
         case "role":
-            setRole(data.role);
+            setRole(data);
             break;
         case "alert":
             alert(data.message);
@@ -75,12 +75,12 @@ function displayChatMessage(sender, message) {
 }
 
 // Set player role and update UI
-function setRole(role) {
+function setRole(data) {
     const roleText = document.getElementById('roleText');
     const roleImage = document.getElementById('roleImage');
     
-    roleText.innerText = role.message;
-    if (role === "mafia") {
+    roleText.innerText = data.message;
+    if (data.role === "mafia") {
         roleImage.src = "images/mafia.png"; 
         document.getElementById('killButton').classList.remove('hidden');
     } else {
