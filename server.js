@@ -120,8 +120,9 @@ function handleDayVote() {
         return;
     }
     //투표가 동률이면 
-    if (sortedVotes.length > 1 && sortedVotes[0][1] === sortedVotes[1][1]) {
+    else if (sortedVotes.length > 1 && sortedVotes[0][1] === sortedVotes[1][1]) {
         broadcast({ type: "system", message: "투표가 동률입니다. 밤이됩니다.." });
+        return;
     } 
     // 투표 결과로 사망할 플레이어 결정
     else {
@@ -176,9 +177,8 @@ function checkGameEnd() {
     const aliveMafia = players.filter(player => player.role === "mafia" && player.alive).length;
     const aliveCitizens = players.filter(player => player.role === "citizen" && player.alive).length;
 
-
-    // 시민 승리 조건: 모든 마피아가 제거됨
-    if (aliveMafia === 0) {
+   // 시민 승리 조건: 모든 마피아가 제거됨
+   if (aliveMafia === 0) {
         endGame("Citizens");
         return true; 
     }
@@ -188,23 +188,27 @@ function checkGameEnd() {
         endGame("Mafia");
         return true; 
     }
+ 
     return false; //게임 계속 진행
 }
 
 //게임 종료후 처리
 function endGame(winner) {
     broadcast({ type: "alert", message: `Game Over! ${winner}팀 승리!` });
-    //게임 상태 초기화
-    players.forEach(player => {
-        player.alive = true; // 모든 플레이어 초기화
-        player.role = null; // 역할 초기화
-    });
-    votes = {};
-    voters = [];
-    rolesAssigned = false;
-    gamePhase = "아침";
-    if (timer) clearInterval(timer);
-    timer = null;
+      // 일정 시간 후 초기화 (예: 5초)
+    setTimeout(() => {
+        // 게임 상태 초기화
+        players.forEach(player => {
+            player.alive = true; // 모든 플레이어 초기화
+            player.role = null; // 역할 초기화
+        });
+        votes = {};
+        voters = [];
+        rolesAssigned = false;
+        gamePhase = "아침";
+        if (timer) clearInterval(timer);
+        timer = null;
+    }, 5000); // 5초 대기 후 초기화
 }
 
 // 클라이언트들에게 데이터를 전송
